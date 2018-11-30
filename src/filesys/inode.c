@@ -6,17 +6,7 @@
 #include "filesys/filesys.h"
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
-
-/* Identifies an inode. */
-#define INODE_MAGIC 0x494e4f44
-
-/* Amount of direct data blocks in an inode */
-#define DIRECT_BLOCKS 10
-
-/* Amount of sectors an indirection block contains */
-#define SECTORS_PER_INDIRECTION_BLOCK BLOCK_SECTOR_SIZE / sizeof(block_sector_t)
-
-#define NOT_PRESENT SECTORS_PER_INDIRECTION_BLOCK + 1
+#include <stdbool.h>
 
 size_t get_first_indirect_from_second(off_t);
 size_t get_direct_level(off_t);
@@ -27,21 +17,6 @@ block_sector_t install_direct_block(void);
 block_sector_t install_first_indirect(long int);
 block_sector_t install_second_indirect(long int);
 
-/* On-disk inode.
-   Must be exactly BLOCK_SECTOR_SIZE bytes long. */
-struct inode_disk
-  {
-    //block_sector_t start;
-    block_sector_t direct[DIRECT_BLOCKS]; /* Direct data sectors. */
-    block_sector_t first_indirect;        /* First level indirection block */
-    block_sector_t second_indirect;       /* Second level indirection block */
-    off_t length;                         /* File size in bytes. */
-    unsigned magic;                       /* Magic number. */
-    //struct inode_details details;
-
-    uint32_t unused[114];                 /* Not used. */
-  };  
-
 /* Returns the number of sectors to allocate for an inode SIZE
    bytes long. */
 static inline size_t
@@ -50,24 +25,15 @@ bytes_to_sectors (off_t size)
   return DIV_ROUND_UP (size, BLOCK_SECTOR_SIZE);
 }
 
-/* In-memory inode. */
-struct inode 
-  {
-    struct list_elem elem;              /* Element in inode list. */
-    block_sector_t sector;              /* Sector number of disk location. */
-    int open_cnt;                       /* Number of openers. */
-    bool removed;                       /* True if deleted, false otherwise. */
-    int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
-    struct inode_disk data;             /* Inode content. */
-  };
-
 void
 grow_file(const struct inode *inode, off_t pos)
 {
   struct inode_disk *disk_inode = &inode->data;
   size_t length = inode_length(inode);
-  long int sectors = bytes_to_sectors(pos - length);
 
+  size_t length_sector = length - (length % BLOCK_SECTOR_SIZE);
+  off_t pos_sector = pos - (pos % BLOCK_SECTOR_SIZE);
+  long int sectors = bytes_to_sectors(pos) - bytes_to_sectors(length);
   size_t start_direct_idx = get_direct_level(length);
   if(sectors > 0 && start_direct_idx != NOT_PRESENT){
     int i;
@@ -101,7 +67,7 @@ grow_file(const struct inode *inode, off_t pos)
   if(sectors > 0){
     int i;
     i = start_second_indirect != NOT_PRESENT ? start_second_indirect : 0;
-    if(i == 0 && start_first_indirect == NOT_PRESENT){
+    if(i == 0 && start_second_indirect == NOT_PRESENT){
       disk_inode->second_indirect = install_second_indirect(sectors);
     }else{
       block_sector_t block[SECTORS_PER_INDIRECTION_BLOCK];
@@ -121,10 +87,13 @@ grow_file(const struct inode *inode, off_t pos)
         }
         block_write(fs_device, block[i], &first_block);
         j = 0;
+        i++;
       }
-      block_write(fs_device, disk_inode->first_indirect, &block);
+      block_write(fs_device, disk_inode->second_indirect, &block);
     }
   }
+  block_sector_t fblock[SECTORS_PER_INDIRECTION_BLOCK];
+  block_read(fs_device, disk_inode->first_indirect, &fblock);
   disk_inode->length = pos;
   block_write(fs_device, inode->sector, disk_inode);
 }
@@ -183,7 +152,7 @@ install_direct_block()
     bool success = free_map_allocate(1, &sector);
     
     if(!success)
-        return -1;
+        PANIC("DIRECT FAILED");
 
     static char zeros[BLOCK_SECTOR_SIZE];
     block_write(fs_device, sector, zeros);
@@ -204,7 +173,7 @@ install_first_indirect(long int sectors)
     bool success = free_map_allocate(1, &indirect_sector);
     
     if(!success)
-        return -1;
+        PANIC("FIRST FAILED");
 
     block_sector_t indirect_block[SECTORS_PER_INDIRECTION_BLOCK];
     
@@ -231,7 +200,7 @@ install_second_indirect(long int sectors)
     bool success = free_map_allocate(1, &second_indirect_sector);
     
     if(!success)
-        return -1;
+        PANIC("SECOND FAILED");
     
     block_sector_t indirect_block[SECTORS_PER_INDIRECTION_BLOCK];
     

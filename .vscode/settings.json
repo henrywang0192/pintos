@@ -5,5 +5,7 @@
         "*.inc": "c",
         "main.h": "c",
         "list.h": "c"
-    }
+    },
+    "C_Cpp.dimInactiveRegions": false,
+    "C_Cpp.intelliSenseEngine": "Tag Parser"
 }

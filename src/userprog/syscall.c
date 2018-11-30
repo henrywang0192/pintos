@@ -27,6 +27,11 @@ int create_fd(char *);
 void close_fd(int);
 void close_all_fd(void);
 
+bool chdir(const char *);
+bool mkdir(const char *);
+bool readdir(int, char *);
+bool isdir(int);
+int inumber(int);
 void exit(int);
 void halt(void);
 int write(int fd, const void *, unsigned);
@@ -39,7 +44,6 @@ unsigned tell(int);
 int read(int, void *, unsigned);
 
 struct lock file_lock;
-
 
 void syscall_init(void)
 {
@@ -66,13 +70,13 @@ syscall_handler(struct intr_frame *f)
     break;
 
   case SYS_EXEC:
-    f -> eax = exec((char *)*get_arg(my_esp, 1, true));
+    f->eax = exec((char *)*get_arg(my_esp, 1, true));
     break;
 
   case SYS_WAIT:
-    f -> eax = process_wait((int)*get_arg(my_esp, 1, false));
+    f->eax = process_wait((int)*get_arg(my_esp, 1, false));
     break;
-  
+
   //Aaron is driving
   case SYS_CREATE:
     f->eax = create((char *)*get_arg(my_esp, 1, true),
@@ -99,9 +103,9 @@ syscall_handler(struct intr_frame *f)
     break;
 
   case SYS_WRITE:
-    f->eax = write((int)*get_arg(my_esp, 1, false), 
-          (void *)*get_arg(my_esp, 2, true),
-          (unsigned)*get_arg(my_esp, 3, false));
+    f->eax = write((int)*get_arg(my_esp, 1, false),
+                   (void *)*get_arg(my_esp, 2, true),
+                   (unsigned)*get_arg(my_esp, 3, false));
     break;
 
   case SYS_SEEK:
@@ -116,7 +120,49 @@ syscall_handler(struct intr_frame *f)
   case SYS_CLOSE:
     close_fd((int)*get_arg(my_esp, 1, false));
     break;
+  case SYS_CHDIR:
+    f->eax = chdir((const char)*get_arg(my_esp, 1, true));
+    break;
+  case SYS_MKDIR:
+    f->eax = mkdir((const char)*get_arg(my_esp, 1, true));
+    break;
+  case SYS_READDIR:
+    f->eax = readdir((int)*get_arg(my_esp, 1, false)
+      ,(const char)*get_arg(my_esp, 2, true));
+    break;
+  case SYS_ISDIR:
+    f->eax = isdir((int)*get_arg(my_esp, 1, false));
+    break;
+  case SYS_INUMBER:
+    f->eax = inumber((int)*get_arg(my_esp, 1, false));
+    break;
   }
+}
+
+bool chdir(const char *dir)
+{
+  return false;
+}
+
+bool mkdir(const char *dir)
+{
+  return false;
+}
+
+bool readdir(int fd, char *name)
+{
+  return false;
+}
+
+bool isdir(int fd)
+{
+  struct file *file = get_file_fd(fd);
+  return file->inode->is_directory;
+}
+
+int inumber(int fd)
+{
+  return 0;
 }
 
 //Exit thread with status
@@ -129,7 +175,7 @@ void exit(int status)
   //Update parent's child_info with child's exit status
   struct list_elem *e;
   for (e = list_begin(child_list); e != list_end(child_list);
-        e = list_next(e))
+       e = list_next(e))
   {
     struct child_info *entry = list_entry(e, struct child_info, elem);
     if (entry->tid == t->tid)
@@ -143,10 +189,10 @@ void exit(int status)
   //Clear the exiting thread's child list
   //Henry is driving
   child_list = &t->child_list;
-  while(!list_empty(child_list))
+  while (!list_empty(child_list))
   {
-    struct child_info *entry = list_entry(list_pop_back(child_list), 
-      struct child_info, elem);
+    struct child_info *entry = list_entry(list_pop_back(child_list),
+                                          struct child_info, elem);
     free(entry);
   }
 
@@ -154,7 +200,8 @@ void exit(int status)
   int size = snprintf(buf, 100, "%s: exit(%d)\n", t->name, status);
   write(1, buf, size);
 
-  if(t->parent->waiting_on == t->tid){
+  if (t->parent->waiting_on == t->tid)
+  {
     sema_up(&thread_current()->parent->child_wait);
   }
 
@@ -196,7 +243,7 @@ pid_t exec(const char *cmd)
   tid_t id = process_execute(cmd);
 
   //Check if child failed to initialize
-  if(thread_current()->child_code == -1)
+  if (thread_current()->child_code == -1)
     return -1;
 
   return (pid_t)id;
@@ -369,9 +416,9 @@ void close_all_fd()
 {
   struct list *file_list = &thread_current()->file_list;
   struct list_elem *e;
-  while (!list_empty (file_list))
+  while (!list_empty(file_list))
   {
-    e = list_pop_front (file_list);
+    e = list_pop_front(file_list);
     struct fd_file *entry = list_entry(e, struct fd_file, elem);
     lock_acquire(&file_lock);
     file_close(entry->file);
@@ -389,12 +436,11 @@ is_valid_user(const void *vaddr)
 
   struct thread *t = thread_current();
   // failed one of the three conditions
-  if ((vaddr == NULL) || (!is_user_vaddr(vaddr)) || 
+  if ((vaddr == NULL) || (!is_user_vaddr(vaddr)) ||
       (pagedir_get_page(t->pagedir, vaddr) == NULL))
   {
     exit(-1);
   }
-  
 }
 
 /*
@@ -409,11 +455,9 @@ static int *
 get_arg(int *esp, int arg, bool validate)
 {
   is_valid_user(esp + arg);
-  
+
   if (validate)
     is_valid_user((void *)*(esp + arg));
 
-
   return esp + arg;
 }
-

@@ -108,6 +108,8 @@ struct thread
     struct thread *parent;              /* Parent thread */
     struct file *executable;            /* Executable file */
 
+    struct dir *cwd;                    /* Current working directory */
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */

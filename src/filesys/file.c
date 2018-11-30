@@ -15,6 +15,7 @@ file_open (struct inode *inode)
       file->inode = inode;
       file->pos = 0;
       file->deny_write = false;
+      inode->is_directory = false;
       return file;
     }
   else
