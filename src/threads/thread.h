@@ -126,6 +126,7 @@ struct fd_file {
   struct list_elem elem;
   int fd;
   struct file *file;
+  struct dir *dir;
 };
 
 /*

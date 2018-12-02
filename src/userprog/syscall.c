@@ -1,6 +1,7 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
+#include <string.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
@@ -14,6 +15,8 @@
 #include "userprog/process.h"
 #include "devices/input.h"
 #include "threads/malloc.h"
+#include "filesys/directory.h"
+#include "filesys/free-map.h"
 
 typedef pid_t;
 
@@ -32,6 +35,9 @@ bool mkdir(const char *);
 bool readdir(int, char *);
 bool isdir(int);
 int inumber(int);
+char *absolute_lookup(const char *);
+char *relative_lookup(const char *);
+bool slash_occur_once(const char *);
 void exit(int);
 void halt(void);
 int write(int fd, const void *, unsigned);
@@ -121,14 +127,14 @@ syscall_handler(struct intr_frame *f)
     close_fd((int)*get_arg(my_esp, 1, false));
     break;
   case SYS_CHDIR:
-    f->eax = chdir((const char)*get_arg(my_esp, 1, true));
+    f->eax = chdir((const char*)*get_arg(my_esp, 1, true));
     break;
   case SYS_MKDIR:
-    f->eax = mkdir((const char)*get_arg(my_esp, 1, true));
+    f->eax = mkdir((const char*)*get_arg(my_esp, 1, true));
     break;
   case SYS_READDIR:
-    f->eax = readdir((int)*get_arg(my_esp, 1, false)
-      ,(const char)*get_arg(my_esp, 2, true));
+    f->eax = readdir((int)*get_arg(my_esp, 1, false), 
+      (const char)*get_arg(my_esp, 2, true));
     break;
   case SYS_ISDIR:
     f->eax = isdir((int)*get_arg(my_esp, 1, false));
@@ -146,8 +152,40 @@ bool chdir(const char *dir)
 
 bool mkdir(const char *dir)
 {
-  return false;
+  lock_acquire(&file_lock);
+
+  if(strlen(dir) == 0){
+    lock_release(&file_lock);
+    return false;
+  }
+  char *ret;
+  if (dir[0] == '/')
+    ret = absolute_lookup(dir);
+  else
+    ret = relative_lookup(dir);
+
+  if (ret == NULL){
+  //  printf("makedir 1\n");
+    lock_release(&file_lock);
+    return false;
+  }
+  else
+  {
+   // printf("makedir 2\n");
+    block_sector_t sector;
+    bool check = free_map_allocate(1, &sector);
+    if(!check)
+      PANIC("Should not be here.");
+
+    struct inode *my_inode;
+    dir_create(sector, 2);
+    my_inode = inode_open(sector);
+    dir_add(dir_open(my_inode), ret, sector);
+    lock_release(&file_lock);
+    return true;
+  }
 }
+
 
 bool readdir(int fd, char *name)
 {
@@ -163,6 +201,74 @@ bool isdir(int fd)
 int inumber(int fd)
 {
   return 0;
+}
+
+/* Used to look up directories from an absolute path */
+char *absolute_lookup(const char *dir)
+{
+  struct dir *current_directory = dir_open_root();
+  struct inode *current_inode;
+  char *saveptr = dir;
+  char *token = NULL;
+  while (((token = strtok_r(saveptr, "/", &saveptr)) != NULL))
+  {
+    if (!slash_occur_once(saveptr))
+    {
+      if (dir_lookup(current_directory, token, current_inode)){
+        return NULL;
+      }
+      else{
+        return token;
+      }
+    }
+    if (!dir_lookup(current_directory, token, current_inode))
+      return NULL;
+
+    current_directory = dir_open(current_inode);
+  }
+  return NULL;
+}
+
+/* Used to lookup directories from a relative path */
+char *relative_lookup(const char *dir)
+{
+  struct dir *current_directory = thread_current()->cwd;
+  struct inode *current_inode;
+  char *saveptr = dir;
+  char *token = NULL;
+  while ((token = strtok_r(saveptr, "/", &saveptr)) != NULL)
+  {
+    if (!slash_occur_once(saveptr))
+    {
+      if (dir_lookup(current_directory, token, current_inode))
+        return NULL;
+      else
+        return saveptr;
+    }
+
+    if (!dir_lookup(current_directory, token, current_inode))
+      return NULL;
+
+    current_directory = dir_open(current_inode);
+  }
+
+  return NULL;
+
+}
+
+/* Checks to see if there is one slash remaining */
+bool slash_occur_once(const char *dir)
+{
+  int count = 0;
+  int i;
+  for (i = 0; i < strlen(dir); i++)
+  {
+    if (dir[i] == '/')
+      count++;
+    if (count > 1)
+      return false;
+  }
+  return true;
 }
 
 //Exit thread with status
@@ -360,7 +466,10 @@ get_file_fd(int fd)
 int create_fd(char *file_name)
 {
   lock_acquire(&file_lock);
+  // differentiate between directory and file
+
   struct file *file_obj = filesys_open(file_name);
+
   lock_release(&file_lock);
   if (file_obj == NULL)
   {
