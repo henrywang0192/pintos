@@ -266,9 +266,9 @@ bool slash_occur_once(const char *dir)
     if (dir[i] == '/')
       count++;
     if (count > 1)
-      return false;
+      return true;
   }
-  return true;
+  return false;
 }
 
 //Exit thread with status
