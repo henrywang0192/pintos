@@ -217,8 +217,7 @@ bool readdir(int fd, char *name)
 
 bool isdir(int fd)
 {
-  struct file *file = get_file_fd(fd);
-  return file->inode->is_directory;
+  return false;
 }
 
 int inumber(int fd)

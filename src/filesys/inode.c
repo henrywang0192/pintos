@@ -17,6 +17,32 @@ block_sector_t install_direct_block(void);
 block_sector_t install_first_indirect(long int);
 block_sector_t install_second_indirect(long int);
 
+/* On-disk inode.
+   Must be exactly BLOCK_SECTOR_SIZE bytes long. */
+struct inode_disk
+  {
+    //block_sector_t start;
+    block_sector_t direct[DIRECT_BLOCKS]; /* Direct data sectors. */
+    block_sector_t first_indirect;        /* First level indirection block */
+    block_sector_t second_indirect;       /* Second level indirection block */
+    off_t length;                         /* File size in bytes. */
+    bool is_directory;                    /* Is this inode a directory? */
+    unsigned magic;                       /* Magic number. */
+
+    uint32_t unused[113];                 /* Not used. */
+  };  
+
+/* In-memory inode. */
+struct inode 
+  {
+    struct list_elem elem;              /* Element in inode list. */
+    block_sector_t sector;              /* Sector number of disk location. */
+    int open_cnt;                       /* Number of openers. */
+    bool removed;                       /* True if deleted, false otherwise. */
+    int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
+    struct inode_disk data;             /* Inode content. */
+  };
+
 /* Returns the number of sectors to allocate for an inode SIZE
    bytes long. */
 static inline size_t
@@ -31,8 +57,6 @@ grow_file(const struct inode *inode, off_t pos)
   struct inode_disk *disk_inode = &inode->data;
   size_t length = inode_length(inode);
 
-  size_t length_sector = length - (length % BLOCK_SECTOR_SIZE);
-  off_t pos_sector = pos - (pos % BLOCK_SECTOR_SIZE);
   long int sectors = bytes_to_sectors(pos) - bytes_to_sectors(length);
   size_t start_direct_idx = get_direct_level(length);
   if(sectors > 0 && start_direct_idx != NOT_PRESENT){
@@ -284,7 +308,7 @@ inode_init (void)
    Returns true if successful.
    Returns false if memory or disk allocation fails. */
 bool
-inode_create (block_sector_t sector, off_t length)
+inode_create (block_sector_t sector, off_t length, bool is_directory)
 {
   struct inode_disk *disk_inode = NULL;
   bool success = false;
@@ -296,16 +320,12 @@ inode_create (block_sector_t sector, off_t length)
   ASSERT (sizeof *disk_inode == BLOCK_SECTOR_SIZE);
 
   disk_inode = calloc (1, sizeof *disk_inode);
-//   disk_inode->details.level = 1;
-//   disk_inode->details.first_level_block = 0;
-//   disk_inode->details.second_level_block = 0;
-//   disk_inode->details.third_level_idx = 0;
-//   disk_inode->details.index_block = 0;
 
   if (disk_inode != NULL)
     {
       long int sectors = (long int) bytes_to_sectors (length);
       disk_inode->length = length;
+      disk_inode->is_directory = is_directory;
       disk_inode->magic = INODE_MAGIC;
 
       if (sectors > 0) 
@@ -326,28 +346,6 @@ inode_create (block_sector_t sector, off_t length)
             disk_inode->second_indirect = install_second_indirect(sectors);
           }
         }
-       int x;
-      // for(x = 0; x < DIRECT_BLOCKS; x++){
-      //   printf("DIRECT[%d]: %d\n", x, disk_inode->direct[x]);
-      // }
-      // printf("INDIRECT: %d\n", disk_inode->first_indirect);
-      // block_sector_t block[SECTORS_PER_INDIRECTION_BLOCK];
-      // block_read(fs_device, disk_inode->first_indirect, &block);
-      // for(x = 0; x < SECTORS_PER_INDIRECTION_BLOCK; x++){
-      //   printf("FIRST INDIRECT[%d]: %u\n", x, block[x]);
-      // }
-
-      
-      // block_sector_t block[SECTORS_PER_INDIRECTION_BLOCK];
-      // block_read(fs_device, disk_inode->second_indirect, &block);
-      // printf("2nd INDIRECT[0]: %d\n", block[0]);
-
-      // block_sector_t first_block[SECTORS_PER_INDIRECTION_BLOCK];
-      // block_read(fs_device, block[0], &first_block);
-      // for(x = 0; x < SECTORS_PER_INDIRECTION_BLOCK; x++){
-      //   printf("SECOND INDIRECT[0] [%d]: %u\n", x, first_block[x]);
-      // }
-
 
       block_write (fs_device, sector, disk_inode);
       success = true; 
