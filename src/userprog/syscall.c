@@ -35,7 +35,6 @@ bool mkdir(const char *);
 bool readdir(int, char *);
 bool isdir(int);
 int inumber(int);
-char *path_lookup(const char *, bool, struct inode **, struct inode **);
 void exit(int);
 void halt(void);
 int write(int fd, const void *, unsigned);
@@ -145,69 +144,22 @@ syscall_handler(struct intr_frame *f)
 
 bool chdir(const char *dir)
 {
+  bool ret;
   lock_acquire(&file_lock);
+  ret = filesys_chdir(dir);
+  lock_release(&file_lock);
 
-  if (strlen(dir) == 0)
-  {
-    lock_release(&file_lock);
-    return false;
-  }
-
-  struct inode *parent;
-  struct inode *child;
-  char *ret;
-  ret = path_lookup(dir, true, &parent, &child);
-
-  if (ret == NULL)
-  {
-    lock_release(&file_lock);
-    return false;
-  }
-  else
-  {
-    thread_current()->cwd = dir_open(child);
-    lock_release(&file_lock);
-    return true;
-  }
-
-  return false;
+  return ret;
 }
 
 bool mkdir(const char *dir)
 {
+  bool ret;
   lock_acquire(&file_lock);
-
-  if (strlen(dir) == 0)
-  {
-    lock_release(&file_lock);
-    return false;
-  }
-
-  struct inode *parent_inode;
-  char *ret;
-  ret = path_lookup(dir, false, &parent_inode, NULL);
-
-  if (ret == NULL)
-  {
-    //  printf("makedir 1\n");
-    lock_release(&file_lock);
-    return false;
-  }
-  else
-  {
-    // printf("makedir 2\n");
-    block_sector_t sector;
-    bool check = free_map_allocate(1, &sector);
-    if (!check)
-      PANIC("Should not be here.");
-
-    struct inode *my_inode;
-    dir_create(sector, 2);
-    my_inode = inode_open(sector);
-    dir_add(dir_open(parent_inode), ret, sector);
-    lock_release(&file_lock);
-    return true;
-  }
+  ret = filesys_mkdir(dir);
+  lock_release(&file_lock);
+  
+  return ret;
 }
 
 bool readdir(int fd, char *name)
@@ -223,51 +175,6 @@ bool isdir(int fd)
 int inumber(int fd)
 {
   return 0;
-}
-
-/* Used to look up directories from an absolute or relative path */
-char *path_lookup(const char *dir, bool must_exist, struct inode **parent,
-  struct inode **child)
-{
-  bool absolute = dir[0] == '/';
-  struct dir *current_directory = absolute ? dir_open_root() 
-    : thread_current()->cwd;
-
-  struct inode *parent_inode = current_directory->inode;
-  struct inode *current_inode = NULL;
-
-  char *saveptr;
-  char *token = NULL;
-  char *next_token = NULL;
-
-  token = strtok_r(dir, "/", &saveptr);
-  //while (((token = strtok_r(saveptr, "/", &saveptr)) != NULL))
-  while (token != NULL)
-  {
-    next_token = strtok_r(NULL, "/", &saveptr);
-    if (next_token == NULL)
-    {
-      if (!must_exist && dir_lookup(current_directory, token, &current_inode))
-      {
-        return NULL;
-      }
-      else
-      {
-        if(parent != NULL)
-          *parent = parent_inode;
-        if(child != NULL)
-          *child = current_inode;
-        return token;
-      }
-    }
-    else if (!dir_lookup(current_directory, token, &current_inode))
-      return NULL;
-
-    parent_inode = current_inode;
-    current_directory = dir_open(current_inode);
-    token = next_token;
-  }
-  return NULL;
 }
 
 //Exit thread with status

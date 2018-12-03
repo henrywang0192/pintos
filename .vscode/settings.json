@@ -4,7 +4,10 @@
         "synch.h": "c",
         "*.inc": "c",
         "main.h": "c",
-        "list.h": "c"
+        "list.h": "c",
+        "thread": "c",
+        "typeindex": "c",
+        "string.h": "c"
     },
     "C_Cpp.dimInactiveRegions": false,
     "C_Cpp.intelliSenseEngine": "Tag Parser"

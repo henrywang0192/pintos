@@ -120,7 +120,7 @@ struct thread
   };
 
 /*
-Pairs file path with file descriptor
+Pairs file or directory with file descriptor
 */
 struct fd_file {
   struct list_elem elem;
