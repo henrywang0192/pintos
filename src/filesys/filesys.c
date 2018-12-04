@@ -63,6 +63,7 @@ filesys_create (const char *path, off_t initial_size)
                   && dir_add (dir, name, inode_sector));
   if (!success && inode_sector != 0) 
     free_map_release (inode_sector, 1);
+
   dir_close (dir);
   return success; 
 }
@@ -124,11 +125,16 @@ filesys_mkdir(const char *path)
     return false;
 
   struct dir *parent_directory;
+  struct dir *new_directory;
 
   dir_create(sector, 2);
 
-  parent_directory = dir_open(parent_inode);
+  new_directory = dir_open(inode_open(sector));
+  dir_add(new_directory, ".", sector);
+  dir_add(new_directory, "..", inode_get_inumber(parent_directory->inode));
+  dir_close(new_directory);
 
+  parent_directory = dir_open(parent_inode);
   dir_add(parent_directory, name, sector);
   dir_close(parent_directory);
 
@@ -141,7 +147,7 @@ filesys_chdir(const char *path)
   struct inode *child;
 
   if(!path_lookup(path, true, NULL, NULL, &child))
-    return false;
+    return false; 
 
   thread_current()->cwd = dir_open(child);
   return true;
@@ -156,6 +162,10 @@ do_format (void)
   if (!dir_create (ROOT_DIR_SECTOR, 16))
     PANIC ("root directory creation failed");
   free_map_close ();
+
+  struct dir *root_dir = dir_open_root();
+  dir_add(root_dir, ".", ROOT_DIR_SECTOR);
+  dir_add(root_dir, "..", ROOT_DIR_SECTOR);
   printf ("done.\n");
 }
 
@@ -174,14 +184,16 @@ do_format (void)
 bool path_lookup(const char *dir, bool must_exist, char **name,
     struct inode **parent, struct inode **child)
 {
-  thread_current()->cwd = dir_open_root();
-
   if(strlen(dir) == 0)
     return false;
+  
+  if(thread_current()->cwd == NULL){
+    thread_current()->cwd = dir_open_root();
+  }
 
   bool absolute = dir[0] == '/';
   struct dir *current_directory = absolute ? dir_open_root() 
-    : thread_current()->cwd;
+    : dir_reopen(thread_current()->cwd);
 
   struct inode *parent_inode = current_directory->inode;
   struct inode *current_inode = parent_inode;
@@ -196,7 +208,7 @@ bool path_lookup(const char *dir, bool must_exist, char **name,
     next_token = strtok_r(NULL, "/", &saveptr);
     if (next_token == NULL)
     {
-      if (!must_exist && dir_lookup(current_directory, token, &current_inode))
+      if (dir_lookup(current_directory, token, &current_inode) && !must_exist)
       {
         return false;
       }
