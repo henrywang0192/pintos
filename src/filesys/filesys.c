@@ -24,7 +24,7 @@ filesys_init (bool format)
   if (fs_device == NULL)
     PANIC ("No file system device found, can't initialize file system.");
 
-  inode_init (); 
+  inode_init ();
   free_map_init ();
 
   if (format) 
@@ -151,6 +151,33 @@ filesys_chdir(const char *path)
 
   thread_current()->cwd = dir_open(child);
   return true;
+}
+
+bool filesys_rmdir(const char *path)
+{
+  struct inode *child;
+  struct inode *parent;
+  char *dir_name;
+
+  if(!path_lookup(path, true, &dir_name, &parent, &child))
+    return false;
+
+  if(!inode_isdir(child))
+    return false;
+  
+  struct dir *dir;
+  dir = dir_open(child);
+
+  char name[NAME_MAX + 1];
+  if(dir_readdir(dir, name))
+    return false;
+  
+  struct dir *parent_dir;
+  parent_dir = dir_open(parent);
+  
+  bool success = dir_remove(parent_dir, dir_name);
+  
+  return success;
 }
 
 /* Formats the file system. */

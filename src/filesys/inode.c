@@ -51,6 +51,12 @@ bytes_to_sectors (off_t size)
   return DIV_ROUND_UP (size, BLOCK_SECTOR_SIZE);
 }
 
+bool
+inode_isdir(const struct inode *inode)
+{
+  return inode->data.is_directory;
+}
+
 void
 grow_file(const struct inode *inode, off_t pos)
 {

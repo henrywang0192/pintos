@@ -24,7 +24,8 @@ dir_open (struct inode *inode)
   if (inode != NULL && dir != NULL)
     {
       dir->inode = inode;
-      dir->pos = 0;
+      //start pos 2 directory entries in so readdir does not return . or ..
+      dir->pos = 2 * sizeof(struct dir_entry);
       return dir;
     }
   else
