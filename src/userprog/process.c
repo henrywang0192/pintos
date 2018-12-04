@@ -96,6 +96,7 @@ start_process (void *file_name)
     sema_up(&thread_current()->parent->child_create);
     thread_exit ();
   }
+  thread_current()->cwd = thread_current()->parent->cwd;
   sema_up(&thread_current()->parent->child_create);
   
   /* Start the user process by simulating a return from an

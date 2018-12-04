@@ -24,7 +24,7 @@ filesys_init (bool format)
   if (fs_device == NULL)
     PANIC ("No file system device found, can't initialize file system.");
 
-  inode_init ();
+  inode_init (); 
   free_map_init ();
 
   if (format) 
@@ -48,7 +48,6 @@ filesys_done (void)
 bool
 filesys_create (const char *path, off_t initial_size) 
 {
-  thread_current()->cwd = dir_open_root();
   char *name;
   struct inode *parent_inode;
 
@@ -76,8 +75,7 @@ filesys_create (const char *path, off_t initial_size)
 struct file *
 filesys_open (const char *path)
 {
-  thread_current()->cwd = dir_open_root();
-  char *name;
+  char *name; 
   struct inode *parent_inode;
   if(!path_lookup(path, true, &name, &parent_inode, NULL))
     return NULL;
@@ -99,10 +97,9 @@ filesys_open (const char *path)
 bool
 filesys_remove (const char *path) 
 {
-  thread_current()->cwd = dir_open_root();
   char *name;
   struct inode *parent_inode;
-  if(!path_lookup(path, false, &name, &parent_inode, NULL))
+  if(!path_lookup(path, true, &name, &parent_inode, NULL))
     return false;
   
   struct dir *dir = dir_open(parent_inode);
@@ -117,16 +114,15 @@ filesys_mkdir(const char *path)
 {
   struct inode *parent_inode;
   char *name;
-
+  
   if (!path_lookup(path, false, &name, &parent_inode, NULL))
     return false;
-  
+
   block_sector_t sector;
-  bool check = free_map_allocate(1, &sector);
-  if (!check)
+  
+  if(!free_map_allocate(1, &sector))
     return false;
 
-  struct inode *my_inode;
   struct dir *parent_directory;
 
   dir_create(sector, 2);
@@ -135,6 +131,7 @@ filesys_mkdir(const char *path)
 
   dir_add(parent_directory, name, sector);
   dir_close(parent_directory);
+
   return true;
 }
 
@@ -177,6 +174,8 @@ do_format (void)
 bool path_lookup(const char *dir, bool must_exist, char **name,
     struct inode **parent, struct inode **child)
 {
+  thread_current()->cwd = dir_open_root();
+
   if(strlen(dir) == 0)
     return false;
 
@@ -190,7 +189,7 @@ bool path_lookup(const char *dir, bool must_exist, char **name,
   char *saveptr;
   char *token = NULL;
   char *next_token = NULL;
-
+  
   token = strtok_r(dir, "/", &saveptr);
   while (token != NULL)
   {
@@ -209,16 +208,18 @@ bool path_lookup(const char *dir, bool must_exist, char **name,
           *child = current_inode;
         if(name != NULL)
           *name = token;
-        ASSERT(parent_inode != NULL);
+
         return true;
       }
     }
-    else{
-      parent_inode = current_inode;
-      if (!dir_lookup(current_directory, token, &current_inode))
-        return false;
+    
+    if (!dir_lookup(current_directory, token, &current_inode)){
+      return false;
     }
+
+    parent_inode = current_inode;
     current_directory = dir_open(current_inode);
+
     token = next_token;
   }
   return false;

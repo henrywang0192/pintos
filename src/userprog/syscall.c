@@ -144,21 +144,29 @@ syscall_handler(struct intr_frame *f)
 
 bool chdir(const char *dir)
 {
+  char *dir_copy = malloc(strlen(dir) + 1);
+  strlcpy(dir_copy, dir, strlen(dir) + 1);
+
   bool ret;
   lock_acquire(&file_lock);
-  ret = filesys_chdir(dir);
+  ret = filesys_chdir(dir_copy);
   lock_release(&file_lock);
 
+  free(dir_copy);
   return ret;
 }
 
 bool mkdir(const char *dir)
 {
+  char *dir_copy = malloc(strlen(dir) + 1);
+  strlcpy(dir_copy, dir, strlen(dir) + 1);
+
   bool ret;
   lock_acquire(&file_lock);
-  ret = filesys_mkdir(dir);
+  ret = filesys_mkdir(dir_copy);
   lock_release(&file_lock);
-  
+
+  free(dir_copy);
   return ret;
 }
 
@@ -265,9 +273,14 @@ pid_t exec(const char *cmd)
 //Chris is driving
 bool create(const char *file, unsigned initial_size)
 {
+  char *file_copy = malloc(strlen(file) + 1);
+  strlcpy(file_copy, file, strlen(file) + 1);
+
   lock_acquire(&file_lock);
-  bool ret = filesys_create(file, initial_size);
+  bool ret = filesys_create(file_copy, initial_size);
   lock_release(&file_lock);
+
+  free(file_copy);
   return ret;
 }
 
@@ -275,9 +288,14 @@ bool create(const char *file, unsigned initial_size)
 //Aaron is driving
 bool remove(const char *file)
 {
+  char *file_copy = malloc(strlen(file) + 1);
+  strlcpy(file_copy, file, strlen(file) + 1);
+
   lock_acquire(&file_lock);
   bool ret = filesys_remove(file);
   lock_release(&file_lock);
+
+  free(file_copy);
   return ret;
 }
 
@@ -371,10 +389,13 @@ get_file_fd(int fd)
 //Tarun is driving
 int create_fd(char *file_name)
 {
+  char *file_copy = malloc(strlen(file_name) + 1);
+  strlcpy(file_copy, file_name, strlen(file_name) + 1);
+
   lock_acquire(&file_lock);
   // differentiate between directory and file
 
-  struct file *file_obj = filesys_open(file_name);
+  struct file *file_obj = filesys_open(file_copy);
 
   lock_release(&file_lock);
   if (file_obj == NULL)
@@ -396,6 +417,7 @@ int create_fd(char *file_name)
   new_entry->file = file_obj;
 
   list_push_back(file_list, &new_entry->elem);
+  free(file_copy);
   return fd;
 }
 
