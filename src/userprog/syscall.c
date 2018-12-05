@@ -131,7 +131,7 @@ syscall_handler(struct intr_frame *f)
     break;
   case SYS_READDIR:
     f->eax = readdir((int)*get_arg(my_esp, 1, false),
-                     (const char)*get_arg(my_esp, 2, true));
+                     (const char *)*get_arg(my_esp, 2, true));
     break;
   case SYS_ISDIR:
     f->eax = isdir((int)*get_arg(my_esp, 1, false));
@@ -498,10 +498,10 @@ void close_all_fd()
     e = list_pop_front(file_list);
     struct fd_file *entry = list_entry(e, struct fd_file, elem);
     lock_acquire(&file_lock);
-      if(entry->file != NULL)
-        file_close(entry->file);
-      else
-        dir_close(entry->dir);
+    if(entry->file != NULL)
+      file_close(entry->file);
+    else
+      dir_close(entry->dir);
     lock_release(&file_lock);
 
     free(entry);
