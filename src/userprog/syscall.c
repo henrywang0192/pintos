@@ -222,6 +222,8 @@ void exit(int status)
     free(entry);
   }
 
+  dir_close(t->cwd);
+
   char buf[100];
   int size = snprintf(buf, 100, "%s: exit(%d)\n", t->name, status);
   write(1, buf, size);

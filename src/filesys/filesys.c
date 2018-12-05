@@ -158,6 +158,9 @@ filesys_chdir(const char *path)
   if(!path_lookup(path, true, NULL, NULL, &child))
     return false; 
 
+  //close old cwd
+  dir_close(thread_current()->cwd);
+
   thread_current()->cwd = dir_open(child);
   return true;
 }
@@ -178,16 +181,21 @@ bool filesys_rmdir(const char *path)
   dir = dir_open(child);
 
   if(inode_get_inumber(dir->inode) == 
-    inode_get_inumber(thread_current()->cwd->inode))
-    return false;
+    inode_get_inumber(thread_current()->cwd->inode)){
+      dir_close(dir);
+      return false;
+    }
   
   if(inode_isopen(dir->inode)){
+    dir_close(dir);
     return false;
   }
 
   char name[NAME_MAX + 1]; 
-  if(dir_readdir(dir, name))
+  if(dir_readdir(dir, name)){
+    dir_close(dir);
     return false;
+  }
   
   struct dir *parent_dir;
   parent_dir = dir_open(parent);
@@ -227,6 +235,7 @@ do_format (void)
   struct dir *root_dir = dir_open_root();
   dir_add(root_dir, ".", ROOT_DIR_SECTOR);
   dir_add(root_dir, "..", ROOT_DIR_SECTOR);
+  dir_close(root_dir);
   printf ("done.\n");
 }
 
@@ -262,6 +271,10 @@ bool path_lookup(const char *dir, bool must_exist, char **name,
       *child = root->inode;
     if(name != NULL)
       *name = "/";
+    if(parent == NULL && child == NULL)
+      dir_close(root);
+    else
+      free(root);
     return true;
   }
 
@@ -269,7 +282,7 @@ bool path_lookup(const char *dir, bool must_exist, char **name,
     : dir_reopen(thread_current()->cwd);
 
   struct inode *parent_inode = current_directory->inode;
-  struct inode *current_inode = parent_inode;
+  struct inode *current_inode = inode_reopen(parent_inode);
 
   char *saveptr;
   char *token = NULL;
@@ -284,29 +297,40 @@ bool path_lookup(const char *dir, bool must_exist, char **name,
       bool exists = dir_lookup(current_directory, token, &current_inode);
       if ((exists && !must_exist) || (!exists && must_exist))
       {
+        dir_close(current_directory);
+        inode_close(parent_inode);
         return false;
       }
       else
       {
         if(parent != NULL)
           *parent = parent_inode;
+        else
+          inode_close(parent_inode);
         if(child != NULL)
           *child = current_inode;
+        else
+          inode_close(current_inode);
         if(name != NULL)
           *name = token;
-
+        free(current_directory);
         return true;
       }
     }
     
     if (!dir_lookup(current_directory, token, &current_inode)){
+      dir_close(current_directory);
+      inode_close(parent_inode);
       return false;
     }
 
     parent_inode = current_inode;
+    dir_close(current_directory);
     current_directory = dir_open(current_inode);
 
     token = next_token;
   }
+  dir_close(current_directory);
+  inode_close(parent_inode);
   return false;
 }
