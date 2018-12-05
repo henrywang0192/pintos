@@ -77,18 +77,27 @@ struct file *
 filesys_open (const char *path)
 {
   char *name; 
-  struct inode *parent_inode;
-  if(!path_lookup(path, true, &name, &parent_inode, NULL))
+  struct inode *child_inode;
+
+  if(!path_lookup(path, true, &name, NULL, &child_inode))
+    return NULL;
+  
+  if(inode_isdir(child_inode))
     return NULL;
 
-  struct dir *dir = dir_open(parent_inode);
-  struct inode *inode = NULL; 
-  
-  if (dir != NULL){
-    dir_lookup (dir, name, &inode);
-  }
-  dir_close (dir);
-  return file_open (inode);
+  return file_open (child_inode);
+}
+
+struct dir *
+filesys_opendir (const char *path)
+{
+  char *name; 
+  struct inode *child_inode;
+  if(!path_lookup(path, true, &name, NULL, &child_inode))
+    return NULL;
+  if(!inode_isdir(child_inode))
+    return NULL;
+  return dir_open (child_inode);
 }
 
 /* Deletes the file named NAME.
@@ -168,7 +177,15 @@ bool filesys_rmdir(const char *path)
   struct dir *dir;
   dir = dir_open(child);
 
-  char name[NAME_MAX + 1];
+  if(inode_get_inumber(dir->inode) == 
+    inode_get_inumber(thread_current()->cwd->inode))
+    return false;
+  
+  if(inode_isopen(dir->inode)){
+    return false;
+  }
+
+  char name[NAME_MAX + 1]; 
   if(dir_readdir(dir, name))
     return false;
   
@@ -176,8 +193,25 @@ bool filesys_rmdir(const char *path)
   parent_dir = dir_open(parent);
   
   bool success = dir_remove(parent_dir, dir_name);
-  
+  dir_close(dir);
+  dir_close(parent_dir);
   return success;
+}
+
+bool filesys_isdir(const char *path)
+{
+  struct inode *child;
+
+  if(!path_lookup(path, true, NULL, NULL, &child))
+    return false;
+  
+  if(!inode_isdir(child)){
+    inode_close(child);
+    return false;
+  }
+  
+  inode_close(child);
+  return true;
 }
 
 /* Formats the file system. */
@@ -219,6 +253,18 @@ bool path_lookup(const char *dir, bool must_exist, char **name,
   }
 
   bool absolute = dir[0] == '/';
+
+  if(strlen(dir) == 1 && absolute && must_exist){
+    struct dir *root = dir_open_root();
+    if(parent != NULL)
+      *parent = root->inode;
+    if(child != NULL)
+      *child = root->inode;
+    if(name != NULL)
+      *name = "/";
+    return true;
+  }
+
   struct dir *current_directory = absolute ? dir_open_root() 
     : dir_reopen(thread_current()->cwd);
 
@@ -235,7 +281,8 @@ bool path_lookup(const char *dir, bool must_exist, char **name,
     next_token = strtok_r(NULL, "/", &saveptr);
     if (next_token == NULL)
     {
-      if (dir_lookup(current_directory, token, &current_inode) && !must_exist)
+      bool exists = dir_lookup(current_directory, token, &current_inode);
+      if ((exists && !must_exist) || (!exists && must_exist))
       {
         return false;
       }

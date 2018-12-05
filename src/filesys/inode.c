@@ -608,3 +608,9 @@ inode_length (const struct inode *inode)
 {
   return inode->data.length;
 }
+
+bool
+inode_isopen(const struct inode *inode)
+{
+  return inode->open_cnt > 1;
+}

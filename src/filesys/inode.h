@@ -32,5 +32,6 @@ void inode_deny_write (struct inode *);
 void inode_allow_write (struct inode *);
 off_t inode_length (const struct inode *);
 bool inode_isdir (const struct inode *);
+bool inode_isopen(const struct inode *);
 void grow_file(const struct inode *, off_t);
 #endif /* filesys/inode.h */

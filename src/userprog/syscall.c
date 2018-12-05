@@ -25,7 +25,7 @@ static void syscall_handler(struct intr_frame *);
 static void is_valid_user(const void *);
 
 static int *get_arg(int *, int, bool);
-struct file *get_file_fd(int);
+struct fd_file *get_file_fd(int);
 int create_fd(char *);
 void close_fd(int);
 void close_all_fd(void);
@@ -172,17 +172,23 @@ bool mkdir(const char *dir)
 
 bool readdir(int fd, char *name)
 {
-  return false;
+  struct fd_file *fd_file = get_file_fd(fd);
+  return dir_readdir(fd_file->dir, name);
 }
 
 bool isdir(int fd)
 {
-  return false;
+  struct fd_file *fd_file = get_file_fd(fd);
+  return fd_file->dir != NULL;
 }
 
 int inumber(int fd)
 {
-  return 0;
+  struct fd_file *fd_file = get_file_fd(fd);
+  if(fd_file->file != NULL)
+    return inode_get_inumber(fd_file->file->inode);
+  else
+    return inode_get_inumber(fd_file->dir->inode);
 }
 
 //Exit thread with status
@@ -248,9 +254,11 @@ int write(int fd, const void *buffer, unsigned size)
   //Write to file
   else
   {
-    struct file *file = get_file_fd(fd);
+    struct fd_file *fd_file = get_file_fd(fd);
+    if(fd_file->dir != NULL)
+      return -1;
     lock_acquire(&file_lock);
-    int written = file_write(file, buffer, size);
+    int written = file_write(fd_file->file, buffer, size);
     lock_release(&file_lock);
     return written;
   }
@@ -286,16 +294,26 @@ bool create(const char *file, unsigned initial_size)
 
 //Remove a file
 //Aaron is driving
-bool remove(const char *file)
+bool remove(const char *path)
 {
-  char *file_copy = malloc(strlen(file) + 1);
-  strlcpy(file_copy, file, strlen(file) + 1);
+  bool ret;
+
+  char *first_path_copy = malloc(strlen(path) + 1);
+  strlcpy(first_path_copy, path, strlen(path) + 1);
+
+  char *second_path_copy = malloc(strlen(path) + 1);
+  strlcpy(second_path_copy, path, strlen(path) + 1);
 
   lock_acquire(&file_lock);
-  bool ret = filesys_remove(file);
+  bool isdir = filesys_isdir(first_path_copy);
+  if(isdir)
+    ret = filesys_rmdir(second_path_copy);
+  else
+    ret = filesys_remove(second_path_copy);
   lock_release(&file_lock);
 
-  free(file_copy);
+  free(first_path_copy);
+  free(second_path_copy);
   return ret;
 }
 
@@ -304,7 +322,7 @@ bool remove(const char *file)
 int filesize(int fd)
 {
   lock_acquire(&file_lock);
-  struct file *file = get_file_fd(fd);
+  struct file *file = get_file_fd(fd)->file;
   int length = -1;
   if (file != NULL)
     length = file_length(file);
@@ -317,7 +335,7 @@ int filesize(int fd)
 void seek(int fd, unsigned position)
 {
   lock_acquire(&file_lock);
-  struct file *file = get_file_fd(fd);
+  struct file *file = get_file_fd(fd)->file;
   file_seek(file, position);
   lock_release(&file_lock);
 }
@@ -328,7 +346,7 @@ unsigned
 tell(int fd)
 {
   lock_acquire(&file_lock);
-  struct file *file = get_file_fd(fd);
+  struct file *file = get_file_fd(fd)->file;
   unsigned ret = file_tell(file);
   lock_release(&file_lock);
   return ret;
@@ -354,7 +372,7 @@ int read(int fd, void *buffer, unsigned size)
   //Read from file
   else
   {
-    struct file *file = get_file_fd(fd);
+    struct file *file = get_file_fd(fd)->file;
     lock_acquire(&file_lock);
     ret = file_read(file, buffer, size);
     lock_release(&file_lock);
@@ -364,7 +382,7 @@ int read(int fd, void *buffer, unsigned size)
 
 //Returns file struct from file descriptor
 //Aaron is driving
-struct file *
+struct fd_file *
 get_file_fd(int fd)
 {
   struct list *file_list = &thread_current()->file_list;
@@ -377,7 +395,7 @@ get_file_fd(int fd)
       struct fd_file *entry = list_entry(e, struct fd_file, elem);
       if (entry->fd == fd)
       {
-        return entry->file;
+        return entry;
       }
     }
   }
@@ -387,21 +405,29 @@ get_file_fd(int fd)
 
 //Open specified file and generate a file descriptor
 //Tarun is driving
-int create_fd(char *file_name)
+int create_fd(char *path)
 {
-  char *file_copy = malloc(strlen(file_name) + 1);
-  strlcpy(file_copy, file_name, strlen(file_name) + 1);
+  char *first_path_copy = malloc(strlen(path) + 1);
+  strlcpy(first_path_copy, path, strlen(path) + 1);
+
+  char *second_path_copy = malloc(strlen(path) + 1);
+  strlcpy(second_path_copy, path, strlen(path) + 1);
 
   lock_acquire(&file_lock);
-  // differentiate between directory and file
 
-  struct file *file_obj = filesys_open(file_copy);
+  struct file *file_obj;
+  struct dir *dir_obj;
+
+  file_obj = filesys_open(first_path_copy);
+  dir_obj = filesys_opendir(second_path_copy);
+
+  bool isdir = dir_obj != NULL;
 
   lock_release(&file_lock);
-  if (file_obj == NULL)
+  if ((isdir && dir_obj == NULL) || (!isdir && file_obj == NULL))
   {
     return -1;
-  }
+  } 
 
   //Get the current highest fd and increment that by 1 to get the new one
   struct list *file_list = &thread_current()->file_list;
@@ -414,10 +440,19 @@ int create_fd(char *file_name)
   //Store fd_file in the thread's file list
   struct fd_file *new_entry = malloc(sizeof(struct fd_file));
   new_entry->fd = fd;
-  new_entry->file = file_obj;
+  if(isdir){
+    new_entry->dir = dir_obj;
+    new_entry->file = NULL;
+  }
+  else{
+    new_entry->file = file_obj;
+    new_entry->dir = NULL;
+  }
 
   list_push_back(file_list, &new_entry->elem);
-  free(file_copy);
+  
+  free(first_path_copy);
+  free(second_path_copy);
   return fd;
 }
 
@@ -436,7 +471,10 @@ void close_fd(int fd)
       if (entry->fd == fd)
       {
         lock_acquire(&file_lock);
-        file_close(entry->file);
+        if(entry->file != NULL)
+          file_close(entry->file);
+        else
+          dir_close(entry->dir);
         lock_release(&file_lock);
 
         list_remove(e);
@@ -458,7 +496,10 @@ void close_all_fd()
     e = list_pop_front(file_list);
     struct fd_file *entry = list_entry(e, struct fd_file, elem);
     lock_acquire(&file_lock);
-    file_close(entry->file);
+      if(entry->file != NULL)
+        file_close(entry->file);
+      else
+        dir_close(entry->dir);
     lock_release(&file_lock);
 
     free(entry);
