@@ -7,6 +7,7 @@
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
 #include <stdbool.h>
+#include "threads/synch.h"
 
 size_t get_first_indirect_from_second(off_t);
 size_t get_direct_level(off_t);
@@ -60,8 +61,11 @@ inode_isdir(const struct inode *inode)
 void
 grow_file(const struct inode *inode, off_t pos)
 {
-  struct inode_disk *disk_inode = &inode->data;
   size_t length = inode_length(inode);
+  // lock_acquire(&inode->inode_lock);
+  // if(length != inode_length(inode))
+  //     return;
+  struct inode_disk *disk_inode = &inode->data;
 
   long int sectors = bytes_to_sectors(pos) - bytes_to_sectors(length);
   size_t start_direct_idx = get_direct_level(length);
@@ -109,23 +113,30 @@ grow_file(const struct inode *inode, off_t pos)
       while(sectors > 0 && i < SECTORS_PER_INDIRECTION_BLOCK){
         block_sector_t first_block[SECTORS_PER_INDIRECTION_BLOCK];
         block_read(fs_device, block[i], &first_block);
-
+        
         while(sectors > 0 && j < SECTORS_PER_INDIRECTION_BLOCK){
           first_block[j] = install_direct_block();
           sectors--;
           j++;
         }
-        block_write(fs_device, block[i], &first_block);
         j = 0;
-        i++;
+        //allocate new sector for next index block of second indirection block
+        block_sector_t new_sector;
+        free_map_allocate(1, &new_sector);
+        block[++i] = new_sector;
+        block_write(fs_device, block[i], &first_block);
+        block_write(fs_device, disk_inode->second_indirect, &block);
+        
       }
-      block_write(fs_device, disk_inode->second_indirect, &block);
+
     }
   }
   block_sector_t fblock[SECTORS_PER_INDIRECTION_BLOCK];
   block_read(fs_device, disk_inode->first_indirect, &fblock);
   disk_inode->length = pos;
   block_write(fs_device, inode->sector, disk_inode);
+  // lock_release(&inode->inode_lock);
+
 }
 
 
@@ -469,6 +480,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
     {
       /* Disk sector to read, starting byte offset within sector. */
       block_sector_t sector_idx = byte_to_sector (inode, offset);
+     // printf("SECTOR IS %d, OFFSET IS %d\n", sector_idx, offset);
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
@@ -525,7 +537,9 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 
   if (inode->deny_write_cnt)
     return 0;
-
+  
+  
+  //check if file growth needed
   if(size + offset > inode_length(inode)){
     grow_file(inode, size + offset);
   }

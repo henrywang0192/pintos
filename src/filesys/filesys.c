@@ -137,13 +137,13 @@ filesys_mkdir(const char *path)
   struct dir *new_directory;
 
   dir_create(sector, 2);
+  parent_directory = dir_open(parent_inode);
 
   new_directory = dir_open(inode_open(sector));
   dir_add(new_directory, ".", sector);
   dir_add(new_directory, "..", inode_get_inumber(parent_directory->inode));
   dir_close(new_directory);
 
-  parent_directory = dir_open(parent_inode);
   dir_add(parent_directory, name, sector);
   dir_close(parent_directory);
 

@@ -257,6 +257,7 @@ int write(int fd, const void *buffer, unsigned size)
   else
   {
     struct fd_file *fd_file = get_file_fd(fd);
+   // printf("FILE IS %p, DIR IS %p, SECTOR is %d\n", fd_file->file,fd_file->dir, inode_get_inumber(fd_file->file->inode));
     if(fd_file->dir != NULL)
       return -1;
     lock_acquire(&file_lock);
