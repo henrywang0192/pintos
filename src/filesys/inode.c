@@ -6,6 +6,7 @@
 #include "filesys/filesys.h"
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
+#include "threads/synch.h"
 #include <stdbool.h>
 
 size_t get_first_indirect_from_second(off_t);
@@ -40,6 +41,7 @@ struct inode
     int open_cnt;                       /* Number of openers. */
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
+    struct lock growth_lock;            /* Synchronize file growth */
     struct inode_disk data;             /* Inode content. */
   };
 
@@ -60,8 +62,16 @@ inode_isdir(const struct inode *inode)
 void
 grow_file(const struct inode *inode, off_t pos)
 {
-  struct inode_disk *disk_inode = &inode->data;
   size_t length = inode_length(inode);
+  lock_acquire(&inode->growth_lock);
+
+  if(length != inode_length(inode)){
+    lock_release(&inode->growth_lock);
+    return;
+  }
+
+  struct inode_disk *disk_inode = &inode->data;
+  
 
   long int sectors = bytes_to_sectors(pos) - bytes_to_sectors(length);
   size_t start_direct_idx = get_direct_level(length);
@@ -126,6 +136,7 @@ grow_file(const struct inode *inode, off_t pos)
   }
   disk_inode->length = pos;
   block_write(fs_device, inode->sector, disk_inode);
+  lock_release(&inode->growth_lock);
 }
 
 
@@ -392,6 +403,7 @@ inode_open (block_sector_t sector)
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
   inode->removed = false;
+  lock_init(&inode->growth_lock);
   block_read (fs_device, inode->sector, &inode->data);
   return inode;
 }

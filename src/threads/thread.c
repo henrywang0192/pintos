@@ -308,9 +308,7 @@ thread_exit (void)
   //Tarun is driving
   list_remove (&thread_current()->allelem);
   //Close current thread's file
-  lock_acquire(&file_lock);
   file_close (thread_current()->executable);
-  lock_release(&file_lock);
   thread_current ()->status = THREAD_DYING;
   schedule ();
   NOT_REACHED ();

@@ -46,13 +46,10 @@ void seek(int, unsigned);
 unsigned tell(int);
 int read(int, void *, unsigned);
 
-struct lock file_lock;
 
 void syscall_init(void)
 {
   intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
-
-  lock_init(&file_lock);
 }
 
 //Tarun is driving
@@ -148,9 +145,7 @@ bool chdir(const char *dir)
   strlcpy(dir_copy, dir, strlen(dir) + 1);
 
   bool ret;
-  lock_acquire(&file_lock);
   ret = filesys_chdir(dir_copy);
-  lock_release(&file_lock);
 
   free(dir_copy);
   return ret;
@@ -162,9 +157,7 @@ bool mkdir(const char *dir)
   strlcpy(dir_copy, dir, strlen(dir) + 1);
 
   bool ret;
-  lock_acquire(&file_lock);
   ret = filesys_mkdir(dir_copy);
-  lock_release(&file_lock);
 
   free(dir_copy);
   return ret;
@@ -259,9 +252,7 @@ int write(int fd, const void *buffer, unsigned size)
     struct fd_file *fd_file = get_file_fd(fd);
     if(fd_file->dir != NULL)
       return -1;
-    lock_acquire(&file_lock);
     int written = file_write(fd_file->file, buffer, size);
-    lock_release(&file_lock);
     return written;
   }
 }
@@ -286,9 +277,7 @@ bool create(const char *file, unsigned initial_size)
   char *file_copy = malloc(strlen(file) + 1);
   strlcpy(file_copy, file, strlen(file) + 1);
 
-  lock_acquire(&file_lock);
   bool ret = filesys_create(file_copy, initial_size);
-  lock_release(&file_lock);
 
   free(file_copy);
   return ret;
@@ -306,13 +295,11 @@ bool remove(const char *path)
   char *second_path_copy = malloc(strlen(path) + 1);
   strlcpy(second_path_copy, path, strlen(path) + 1);
 
-  lock_acquire(&file_lock);
   bool isdir = filesys_isdir(first_path_copy);
   if(isdir)
     ret = filesys_rmdir(second_path_copy);
   else
     ret = filesys_remove(second_path_copy);
-  lock_release(&file_lock);
 
   free(first_path_copy);
   free(second_path_copy);
@@ -323,12 +310,10 @@ bool remove(const char *path)
 //Aaron is driving
 int filesize(int fd)
 {
-  lock_acquire(&file_lock);
   struct file *file = get_file_fd(fd)->file;
   int length = -1;
   if (file != NULL)
     length = file_length(file);
-  lock_release(&file_lock);
   return length;
 }
 
@@ -336,10 +321,8 @@ int filesize(int fd)
 //Henry is driving
 void seek(int fd, unsigned position)
 {
-  lock_acquire(&file_lock);
   struct file *file = get_file_fd(fd)->file;
   file_seek(file, position);
-  lock_release(&file_lock);
 }
 
 //Returns next byte to be read or written
@@ -347,10 +330,8 @@ void seek(int fd, unsigned position)
 unsigned
 tell(int fd)
 {
-  lock_acquire(&file_lock);
   struct file *file = get_file_fd(fd)->file;
   unsigned ret = file_tell(file);
-  lock_release(&file_lock);
   return ret;
 }
 
@@ -375,9 +356,7 @@ int read(int fd, void *buffer, unsigned size)
   else
   {
     struct file *file = get_file_fd(fd)->file;
-    lock_acquire(&file_lock);
     ret = file_read(file, buffer, size);
-    lock_release(&file_lock);
   }
   return ret;
 }
@@ -415,7 +394,6 @@ int create_fd(char *path)
   char *second_path_copy = malloc(strlen(path) + 1);
   strlcpy(second_path_copy, path, strlen(path) + 1);
 
-  lock_acquire(&file_lock);
 
   struct file *file_obj;
   struct dir *dir_obj;
@@ -425,7 +403,6 @@ int create_fd(char *path)
 
   bool isdir = dir_obj != NULL;
 
-  lock_release(&file_lock);
   if ((isdir && dir_obj == NULL) || (!isdir && file_obj == NULL))
   {
     return -1;
@@ -472,12 +449,10 @@ void close_fd(int fd)
       struct fd_file *entry = list_entry(e, struct fd_file, elem);
       if (entry->fd == fd)
       {
-        lock_acquire(&file_lock);
         if(entry->file != NULL)
           file_close(entry->file);
         else
           dir_close(entry->dir);
-        lock_release(&file_lock);
 
         list_remove(e);
         free(entry);
@@ -497,12 +472,10 @@ void close_all_fd()
   {
     e = list_pop_front(file_list);
     struct fd_file *entry = list_entry(e, struct fd_file, elem);
-    lock_acquire(&file_lock);
     if(entry->file != NULL)
       file_close(entry->file);
     else
       dir_close(entry->dir);
-    lock_release(&file_lock);
 
     free(entry);
   }

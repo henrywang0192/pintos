@@ -80,9 +80,7 @@ start_process (void *file_name)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   
-  lock_acquire(&file_lock);
   success = load (file_name, &if_.eip, &if_.esp);
-  lock_release(&file_lock);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
