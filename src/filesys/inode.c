@@ -115,15 +115,15 @@ grow_file(const struct inode *inode, off_t pos)
           sectors--;
           j++;
         }
-        block_write(fs_device, block[i], &first_block);
         j = 0;
-        i++;
+        block_sector_t new_sector;
+        free_map_allocate(1, &new_sector);
+        block_write(fs_device, block[i], &first_block);
+        block[++i]= new_sector;
+        block_write(fs_device, disk_inode->second_indirect, &block);
       }
-      block_write(fs_device, disk_inode->second_indirect, &block);
     }
   }
-  block_sector_t fblock[SECTORS_PER_INDIRECTION_BLOCK];
-  block_read(fs_device, disk_inode->first_indirect, &fblock);
   disk_inode->length = pos;
   block_write(fs_device, inode->sector, disk_inode);
 }
