@@ -34,4 +34,5 @@ off_t inode_length (const struct inode *);
 bool inode_isdir (const struct inode *);
 bool inode_isopen(const struct inode *);
 void grow_file(const struct inode *, off_t);
+int inode_openct(const struct inode *inode);
 #endif /* filesys/inode.h */

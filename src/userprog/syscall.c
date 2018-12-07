@@ -405,6 +405,8 @@ int create_fd(char *path)
 
   if ((isdir && dir_obj == NULL) || (!isdir && file_obj == NULL))
   {
+    free(first_path_copy);
+    free(second_path_copy);
     return -1;
   } 
 

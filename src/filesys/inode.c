@@ -79,7 +79,12 @@ grow_file(const struct inode *inode, off_t pos)
     int i;
     i = length == 0 ? 0 : start_direct_idx + 1;
     while(sectors > 0 && i < DIRECT_BLOCKS){
-      disk_inode->direct[i] = install_direct_block();
+      block_sector_t sector = install_direct_block();
+      if(sector == -1){
+        lock_release(&inode->growth_lock);
+        return;
+      }
+      disk_inode->direct[i] = sector;
       sectors--;
       i++;
     }
@@ -90,13 +95,19 @@ grow_file(const struct inode *inode, off_t pos)
     int i;
     i = start_first_indirect != NOT_PRESENT ? start_first_indirect + 1 : 0;
     if(i == 0){
-      disk_inode->first_indirect = install_first_indirect(sectors);
+      block_sector_t sector = install_first_indirect(sectors);
+      if(sector == -1)
+        PANIC("FIRST");
+      disk_inode->first_indirect = sector;
       sectors = sectors - SECTORS_PER_INDIRECTION_BLOCK;
     }else{
       block_sector_t block[SECTORS_PER_INDIRECTION_BLOCK];
       block_read(fs_device, disk_inode->first_indirect, &block);
       while(sectors > 0 && i < SECTORS_PER_INDIRECTION_BLOCK){
-        block[i] = install_direct_block();
+        block_sector_t sector = install_direct_block();
+        if(sector == -1)
+          PANIC("SECOND");
+        block[i] = sector;
         sectors--;
         i++;
       }
@@ -193,7 +204,7 @@ install_direct_block()
     bool success = free_map_allocate(1, &sector);
     
     if(!success)
-        PANIC("DIRECT FAILED");
+        return -1;
 
     static char zeros[BLOCK_SECTOR_SIZE];
     block_write(fs_device, sector, zeros);
@@ -214,14 +225,17 @@ install_first_indirect(long int sectors)
     bool success = free_map_allocate(1, &indirect_sector);
     
     if(!success)
-        PANIC("FIRST FAILED");
+      return -1;
 
     block_sector_t indirect_block[SECTORS_PER_INDIRECTION_BLOCK];
     
     int i;
     i = 0;
     while(sectors > 0 && i < SECTORS_PER_INDIRECTION_BLOCK){
-        indirect_block[i] = install_direct_block();
+        block_sector_t sector = install_direct_block();
+        if(sector == -1)
+          return -1;
+        indirect_block[i] = sector;
         sectors--;
         i++;
     }
@@ -241,14 +255,17 @@ install_second_indirect(long int sectors)
     bool success = free_map_allocate(1, &second_indirect_sector);
     
     if(!success)
-        PANIC("SECOND FAILED");
+        return -1;
     
     block_sector_t indirect_block[SECTORS_PER_INDIRECTION_BLOCK];
     
     int i;
     i = 0;
     while(sectors > 0 && i < SECTORS_PER_INDIRECTION_BLOCK){
-        indirect_block[i] = install_first_indirect(sectors);
+        block_sector_t sector = install_first_indirect(sectors);
+        if(sector == -1)
+          return -1;
+        indirect_block[i] = sector;
         sectors -= SECTORS_PER_INDIRECTION_BLOCK;
         i++;
     }
@@ -349,18 +366,28 @@ inode_create (block_sector_t sector, off_t length, bool is_directory)
         {
           size_t i;
           for (i = 0; i < sectors && i < DIRECT_BLOCKS; i++){ 
-            disk_inode->direct[i] = install_direct_block();
+            block_sector_t sector = install_direct_block();
+            if(sector == -1)
+              return false;
+            disk_inode->direct[i] = sector;
           }
 
           sectors -= DIRECT_BLOCKS;
 
           if(sectors > 0){
-            disk_inode->first_indirect = install_first_indirect(sectors);
+            block_sector_t sector = install_first_indirect(sectors);
+            if(sector == -1)
+              return false;
+
+            disk_inode->first_indirect = sector;
           }
           
           sectors -= SECTORS_PER_INDIRECTION_BLOCK;
           if(sectors > 0){
-            disk_inode->second_indirect = install_second_indirect(sectors);
+            block_sector_t sector = install_second_indirect(sectors);
+            if(sector == -1)
+              return false;
+            disk_inode->second_indirect = sector;
           }
         }
 
@@ -624,5 +651,11 @@ inode_length (const struct inode *inode)
 bool
 inode_isopen(const struct inode *inode)
 {
-  return inode->open_cnt > 1;
+  return inode->open_cnt > 1; 
+}
+
+int
+inode_openct(const struct inode *inode)
+{
+  return inode->open_cnt; 
 }

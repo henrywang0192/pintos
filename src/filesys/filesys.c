@@ -82,8 +82,10 @@ filesys_open (const char *path)
   if(!path_lookup(path, true, &name, NULL, &child_inode))
     return NULL;
   
-  if(inode_isdir(child_inode))
+  if(inode_isdir(child_inode)){
+    inode_close(child_inode);
     return NULL;
+  }
 
   return file_open (child_inode);
 }
@@ -95,8 +97,10 @@ filesys_opendir (const char *path)
   struct inode *child_inode;
   if(!path_lookup(path, true, &name, NULL, &child_inode))
     return NULL;
-  if(!inode_isdir(child_inode))
+  if(!inode_isdir(child_inode)){
+    inode_close(child_inode);
     return NULL;
+  }
   return dir_open (child_inode);
 }
 
@@ -174,8 +178,11 @@ bool filesys_rmdir(const char *path)
   if(!path_lookup(path, true, &dir_name, &parent, &child))
     return false;
 
-  if(!inode_isdir(child))
+  if(!inode_isdir(child)){
+    inode_close(parent);
+    inode_close(child);
     return false;
+  }
   
   struct dir *dir;
   dir = dir_open(child);
@@ -186,10 +193,11 @@ bool filesys_rmdir(const char *path)
       return false;
     }
   
-  if(inode_isopen(dir->inode)){
-    dir_close(dir);
-    return false;
-  }
+  // if(inode_isopen(dir->inode)){
+  //   printf("open ct %d\n", inode_openct(dir->inode));
+  //   dir_close(dir);
+  //   return false;
+  // }
 
   char name[NAME_MAX + 1]; 
   if(dir_readdir(dir, name)){
@@ -266,22 +274,19 @@ bool path_lookup(const char *dir, bool must_exist, char **name,
   if(strlen(dir) == 1 && absolute && must_exist){
     struct dir *root = dir_open_root();
     if(parent != NULL)
-      *parent = root->inode;
+      *parent = inode_reopen(root->inode);
     if(child != NULL)
-      *child = root->inode;
+      *child = inode_reopen(root->inode);
     if(name != NULL)
       *name = "/";
-    if(parent == NULL && child == NULL)
-      dir_close(root);
-    else
-      free(root);
+    dir_close(root);
     return true;
   }
 
   struct dir *current_directory = absolute ? dir_open_root() 
     : dir_reopen(thread_current()->cwd);
 
-  struct inode *parent_inode = current_directory->inode;
+  struct inode *parent_inode = inode_reopen(current_directory->inode);
   struct inode *current_inode = inode_reopen(parent_inode);
 
   char *saveptr;
@@ -294,9 +299,11 @@ bool path_lookup(const char *dir, bool must_exist, char **name,
     next_token = strtok_r(NULL, "/", &saveptr);
     if (next_token == NULL)
     {
+      inode_close(current_inode);
       bool exists = dir_lookup(current_directory, token, &current_inode);
       if ((exists && !must_exist) || (!exists && must_exist))
       {
+        inode_close(current_inode);
         dir_close(current_directory);
         inode_close(parent_inode);
         return false;
@@ -304,29 +311,28 @@ bool path_lookup(const char *dir, bool must_exist, char **name,
       else
       {
         if(parent != NULL)
-          *parent = parent_inode;
-        else
-          inode_close(parent_inode);
+          *parent = inode_reopen(parent_inode);
         if(child != NULL)
-          *child = current_inode;
-        else
-          inode_close(current_inode);
+          *child = inode_reopen(current_inode);
         if(name != NULL)
           *name = token;
-        free(current_directory);
+        inode_close(parent_inode);
+        inode_close(current_inode);
+        dir_close(current_directory);
         return true;
       }
     }
-    
+    inode_close(current_inode);
     if (!dir_lookup(current_directory, token, &current_inode)){
       dir_close(current_directory);
       inode_close(parent_inode);
       return false;
     }
 
-    parent_inode = current_inode;
+    inode_close(parent_inode);
+    parent_inode = inode_reopen(current_inode);
     dir_close(current_directory);
-    current_directory = dir_open(current_inode);
+    current_directory = dir_open(inode_reopen(current_inode));
 
     token = next_token;
   }

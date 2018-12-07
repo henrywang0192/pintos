@@ -62,7 +62,7 @@ free_map_open (void)
 
 /* Writes the free map to disk and closes the free map file. */
 void
-free_map_close (void) 
+free_map_close (void)
 {
   file_close (free_map_file);
 }
