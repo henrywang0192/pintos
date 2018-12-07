@@ -193,11 +193,11 @@ bool filesys_rmdir(const char *path)
       return false;
     }
   
-  // if(inode_isopen(dir->inode)){
-  //   printf("open ct %d\n", inode_openct(dir->inode));
-  //   dir_close(dir);
-  //   return false;
-  // }
+  if(inode_isopen(dir->inode)){
+    //printf("open ct %d\n", inode_openct(dir->inode));
+    dir_close(dir);
+    return false;
+  }
 
   char name[NAME_MAX + 1]; 
   if(dir_readdir(dir, name)){

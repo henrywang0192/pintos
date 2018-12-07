@@ -651,7 +651,7 @@ inode_length (const struct inode *inode)
 bool
 inode_isopen(const struct inode *inode)
 {
-  return inode->open_cnt > 1; 
+  return inode->open_cnt > 2; 
 }
 
 int
