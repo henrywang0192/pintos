@@ -123,10 +123,10 @@ struct thread
 Pairs file or directory with file descriptor
 */
 struct fd_file {
-  struct list_elem elem;
-  int fd;
-  struct file *file;
-  struct dir *dir;
+  struct list_elem elem;                /* List element for fd_file */
+  int fd;                               /* Associated fd number */
+  struct file *file;                    /* Associated file (if file) */
+  struct dir *dir;                      /* Associated dir (if directory) */
 };
 
 /*

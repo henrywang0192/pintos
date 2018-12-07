@@ -46,7 +46,6 @@ void seek(int, unsigned);
 unsigned tell(int);
 int read(int, void *, unsigned);
 
-
 void syscall_init(void)
 {
   intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
@@ -116,7 +115,7 @@ syscall_handler(struct intr_frame *f)
   case SYS_TELL:
     f->eax = tell((int)*get_arg(my_esp, 1, false));
     break;
-
+  //Henry is driving
   case SYS_CLOSE:
     close_fd((int)*get_arg(my_esp, 1, false));
     break;
@@ -139,6 +138,8 @@ syscall_handler(struct intr_frame *f)
   }
 }
 
+//Change cwd to new directory dir, based on
+//relative or absolute path
 bool chdir(const char *dir)
 {
   char *dir_copy = malloc(strlen(dir) + 1);
@@ -151,6 +152,8 @@ bool chdir(const char *dir)
   return ret;
 }
 
+//Makes new directory dir, based on relative or
+//absolute path
 bool mkdir(const char *dir)
 {
   char *dir_copy = malloc(strlen(dir) + 1);
@@ -163,22 +166,28 @@ bool mkdir(const char *dir)
   return ret;
 }
 
+//Chris is driving
+//Reads directory entry from specified fd entry,
+//and can be absolute or relative path
 bool readdir(int fd, char *name)
 {
   struct fd_file *fd_file = get_file_fd(fd);
   return dir_readdir(fd_file->dir, name);
 }
 
+//Returns true if fd is directory, and false if not
 bool isdir(int fd)
 {
   struct fd_file *fd_file = get_file_fd(fd);
   return fd_file->dir != NULL;
 }
 
+//Returns inode number, a.k.a the underlying sector
+//number of the specified fd
 int inumber(int fd)
 {
   struct fd_file *fd_file = get_file_fd(fd);
-  if(fd_file->file != NULL)
+  if (fd_file->file != NULL)
     return inode_get_inumber(fd_file->file->inode);
   else
     return inode_get_inumber(fd_file->dir->inode);
@@ -215,6 +224,7 @@ void exit(int status)
     free(entry);
   }
 
+  //Close the current working directory of exiting thread
   dir_close(t->cwd);
 
   char buf[100];
@@ -250,7 +260,8 @@ int write(int fd, const void *buffer, unsigned size)
   else
   {
     struct fd_file *fd_file = get_file_fd(fd);
-    if(fd_file->dir != NULL)
+    //Make sure the fd is a file to write to specified file
+    if (fd_file->dir != NULL)
       return -1;
     int written = file_write(fd_file->file, buffer, size);
     return written;
@@ -289,14 +300,17 @@ bool remove(const char *path)
 {
   bool ret;
 
+  //Make copies of the path, incase it gets changed
   char *first_path_copy = malloc(strlen(path) + 1);
   strlcpy(first_path_copy, path, strlen(path) + 1);
 
   char *second_path_copy = malloc(strlen(path) + 1);
   strlcpy(second_path_copy, path, strlen(path) + 1);
 
+  //Use rmdir or remove method, depending on if
+  //removing file or directory
   bool isdir = filesys_isdir(first_path_copy);
-  if(isdir)
+  if (isdir)
     ret = filesys_rmdir(second_path_copy);
   else
     ret = filesys_remove(second_path_copy);
@@ -394,21 +408,23 @@ int create_fd(char *path)
   char *second_path_copy = malloc(strlen(path) + 1);
   strlcpy(second_path_copy, path, strlen(path) + 1);
 
-
   struct file *file_obj;
   struct dir *dir_obj;
 
+  //Attempt to open as a file and directory, and distinguish
+  //which one it is to set it to proper field in fd_file
   file_obj = filesys_open(first_path_copy);
   dir_obj = filesys_opendir(second_path_copy);
 
   bool isdir = dir_obj != NULL;
 
+  //Ensure that directory or file was created
   if ((isdir && dir_obj == NULL) || (!isdir && file_obj == NULL))
   {
     free(first_path_copy);
     free(second_path_copy);
     return -1;
-  } 
+  }
 
   //Get the current highest fd and increment that by 1 to get the new one
   struct list *file_list = &thread_current()->file_list;
@@ -421,17 +437,19 @@ int create_fd(char *path)
   //Store fd_file in the thread's file list
   struct fd_file *new_entry = malloc(sizeof(struct fd_file));
   new_entry->fd = fd;
-  if(isdir){
+  if (isdir)
+  {
     new_entry->dir = dir_obj;
     new_entry->file = NULL;
   }
-  else{
+  else
+  {
     new_entry->file = file_obj;
     new_entry->dir = NULL;
   }
 
   list_push_back(file_list, &new_entry->elem);
-  
+
   free(first_path_copy);
   free(second_path_copy);
   return fd;
@@ -451,7 +469,7 @@ void close_fd(int fd)
       struct fd_file *entry = list_entry(e, struct fd_file, elem);
       if (entry->fd == fd)
       {
-        if(entry->file != NULL)
+        if (entry->file != NULL)
           file_close(entry->file);
         else
           dir_close(entry->dir);
@@ -474,7 +492,7 @@ void close_all_fd()
   {
     e = list_pop_front(file_list);
     struct fd_file *entry = list_entry(e, struct fd_file, elem);
-    if(entry->file != NULL)
+    if (entry->file != NULL)
       file_close(entry->file);
     else
       dir_close(entry->dir);

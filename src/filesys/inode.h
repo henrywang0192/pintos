@@ -15,6 +15,7 @@
 /* Amount of sectors an indirection block contains */
 #define SECTORS_PER_INDIRECTION_BLOCK BLOCK_SECTOR_SIZE / sizeof(block_sector_t)
 
+/* Used to check if sector number is within bounds */
 #define NOT_PRESENT SECTORS_PER_INDIRECTION_BLOCK + 1
 
 struct bitmap;
