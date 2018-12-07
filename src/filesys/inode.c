@@ -42,6 +42,7 @@ struct inode
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
     struct lock growth_lock;            /* Synchronize file growth */
+    struct lock dir_lock;               /* Synchronize operations in a dir */
     struct inode_disk data;             /* Inode content. */
   };
 
@@ -331,7 +332,7 @@ static struct list open_inodes;
 
 /* Initializes the inode module. */
 void
-inode_init (void) 
+inode_init (void)
 {
   list_init (&open_inodes);
 }
@@ -431,6 +432,7 @@ inode_open (block_sector_t sector)
   inode->deny_write_cnt = 0;
   inode->removed = false;
   lock_init(&inode->growth_lock);
+  lock_init(&inode->dir_lock);
   block_read (fs_device, inode->sector, &inode->data);
   return inode;
 }
@@ -557,7 +559,6 @@ off_t
 inode_write_at (struct inode *inode, const void *buffer_, off_t size,
                 off_t offset) 
 {
-  
   const uint8_t *buffer = buffer_;
   off_t bytes_written = 0;
   uint8_t *bounce = NULL;
@@ -654,8 +655,14 @@ inode_isopen(const struct inode *inode)
   return inode->open_cnt > 2; 
 }
 
-int
-inode_openct(const struct inode *inode)
+void
+inode_acquire_dirlock(const struct inode *inode)
 {
-  return inode->open_cnt; 
+  lock_acquire(&inode->dir_lock);
+}
+
+void
+inode_release_dirlock(const struct inode *inode)
+{
+  lock_release(&inode->dir_lock);
 }

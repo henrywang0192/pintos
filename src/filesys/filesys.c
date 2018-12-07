@@ -56,14 +56,14 @@ filesys_create (const char *path, off_t initial_size)
 
   block_sector_t inode_sector = 0;
   struct dir *dir = dir_open(parent_inode);
-
+  inode_acquire_dirlock(dir->inode);
   bool success = (dir != NULL
                   && free_map_allocate (1, &inode_sector)
                   && inode_create (inode_sector, initial_size, false)
                   && dir_add (dir, name, inode_sector));
   if (!success && inode_sector != 0) 
     free_map_release (inode_sector, 1);
-
+  inode_release_dirlock(dir->inode);
   dir_close (dir);
   return success; 
 }
@@ -115,11 +115,14 @@ filesys_remove (const char *path)
   struct inode *parent_inode;
   if(!path_lookup(path, true, &name, &parent_inode, NULL))
     return false;
-  
-  struct dir *dir = dir_open(parent_inode);
-  bool success = dir != NULL && dir_remove (dir, name);
-  dir_close (dir); 
 
+  struct dir *dir = dir_open(parent_inode);
+  
+  inode_acquire_dirlock(dir->inode);
+  bool success = dir != NULL && dir_remove (dir, name);
+  inode_release_dirlock(dir->inode);
+  
+  dir_close (dir);
   return success;
 }
 
@@ -194,7 +197,6 @@ bool filesys_rmdir(const char *path)
     }
   
   if(inode_isopen(dir->inode)){
-    //printf("open ct %d\n", inode_openct(dir->inode));
     dir_close(dir);
     return false;
   }
