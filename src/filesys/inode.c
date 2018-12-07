@@ -44,6 +44,7 @@ struct inode
     struct lock growth_lock;            /* Synchronize file growth */
     struct lock dir_lock;               /* Synchronize operations in a dir */
     struct inode_disk data;             /* Inode content. */
+    bool is_growing;                    /* Flag to see if growth is occuring */
   };
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -61,13 +62,12 @@ inode_isdir(const struct inode *inode)
 }
 
 void
-grow_file(const struct inode *inode, off_t pos)
+grow_file(struct inode *inode, off_t pos)
 {
   size_t length = inode_length(inode);
   lock_acquire(&inode->growth_lock);
-
+  inode->is_growing = true;
   if(length != inode_length(inode)){
-    lock_release(&inode->growth_lock);
     return;
   }
 
@@ -82,7 +82,6 @@ grow_file(const struct inode *inode, off_t pos)
     while(sectors > 0 && i < DIRECT_BLOCKS){
       block_sector_t sector = install_direct_block();
       if(sector == -1){
-        lock_release(&inode->growth_lock);
         return;
       }
       disk_inode->direct[i] = sector;
@@ -148,7 +147,6 @@ grow_file(const struct inode *inode, off_t pos)
   }
   disk_inode->length = pos;
   block_write(fs_device, inode->sector, disk_inode);
-  lock_release(&inode->growth_lock);
 }
 
 
@@ -502,6 +500,13 @@ inode_remove (struct inode *inode)
 off_t
 inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset) 
 {
+  lock_acquire(&inode->growth_lock);
+  if(inode->is_growing)
+    if(offset+size > inode_length(inode))
+      size = inode_length(inode) - offset;
+  lock_release(&inode->growth_lock);
+
+
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
   uint8_t *bounce = NULL;
@@ -547,6 +552,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       bytes_read += chunk_size;
     }
   free (bounce);
+
   return bytes_read;
 }
 
@@ -560,16 +566,18 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
                 off_t offset) 
 {
   const uint8_t *buffer = buffer_;
+  bool growth_occured = false;
   off_t bytes_written = 0;
   uint8_t *bounce = NULL;
 
-  if (inode->deny_write_cnt)
+  if (inode->deny_write_cnt){
     return 0;
+  }
 
   if(size + offset > inode_length(inode)){
     grow_file(inode, size + offset);
+    growth_occured = true;
   }
-
   while (size > 0) 
     {
       /* Sector to write, starting byte offset within sector. */
@@ -618,7 +626,10 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       bytes_written += chunk_size;
     }
   free (bounce);
-
+  if(growth_occured){
+    inode->is_growing = false;
+    lock_release(&inode->growth_lock);
+  }
   return bytes_written;
 }
 

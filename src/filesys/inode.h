@@ -33,7 +33,7 @@ void inode_allow_write (struct inode *);
 off_t inode_length (const struct inode *);
 bool inode_isdir (const struct inode *);
 bool inode_isopen(const struct inode *);
-void grow_file(const struct inode *, off_t);
+void grow_file(struct inode *, off_t);
 void inode_acquire_dirlock(const struct inode *);
 void inode_release_dirlock(const struct inode *);
 #endif /* filesys/inode.h */
